@@ -1,0 +1,8 @@
+cat /dev/ttyAMA2
+stty -F /dev/ttyAMA2
+
+
+sudo systemctl stop gpsd.socket
+sudo systemctl disable gpsd.socket
+sudo gpsd /dev/ttyAMA2 -F /var/run/gpsd.sock
+cgps -s
