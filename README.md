@@ -1,3 +1,13 @@
-# TZIKIN
-Estacion Meteorológica Portatil
-Canva: https://www.canva.com/design/DAGeD6Kh7JA/Viy3aJr3xcU9ErNxvHPG0A/edit?utm_content=DAGeD6Kh7JA&utm_campaign=designshare&utm_medium=link2&utm_source=sharebutton
+# 🌦️ TZ'IKIN - Estación Meteorológica Portátil  
+---
+TZ'IKIN es una estación meteorológica portátil diseñada para medir y registrar datos climáticos en tiempo real. Su objetivo es proporcionar información precisa y accesible para investigaciones, monitoreo ambiental y aplicaciones en zonas remotas.  
+
+![TZ'IKIN](https://www.canva.com/design/DAGeD6Kh7JA/Viy3aJr3xcU9ErNxvHPG0A/view?embed)  
+
+## 🔗 Recursos  
+
+🔹 **🎨 Canva del Proyecto:**  
+[👉 Ver en Canva](https://www.canva.com/design/DAGeD6Kh7JA/Viy3aJr3xcU9ErNxvHPG0A/edit)  
+
+🔹 **🧠 Pizarra de Ideas:**  
+[📝 Explorar Pizarra](https://www.canva.com/design/DAGhdl8T9aY/3HPJZhcbkPQlukG-oo5JQg/edit)  
