@@ -2,8 +2,6 @@
 ---
 TZ'IKIN es una estación meteorológica portátil diseñada para medir y registrar datos climáticos en tiempo real. Su objetivo es proporcionar información precisa y accesible para investigaciones, monitoreo ambiental y aplicaciones en zonas remotas.  
 
-![TZ'IKIN](https://www.canva.com/design/DAGeD6Kh7JA/Viy3aJr3xcU9ErNxvHPG0A/view?embed)  
-
 ## 🔗 Recursos  
 
 🔹 **🎨 Canva del Proyecto:**  
