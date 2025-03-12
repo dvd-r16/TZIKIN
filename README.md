@@ -1,4 +1,5 @@
-# <img src="TZ'IKIN.png" alt="TZ'IKIN Logo" width="80"> TZ'IKIN - Estación Meteorológica Portátil
+# <img src="TZ'IKIN - Banner.png" alt="TZ'IKIN Logo" width="270"> 
+# Estación Meteorológica Portátil
 
 ---
 TZ'IKIN es una estación meteorológica portátil diseñada para medir y registrar datos climáticos en tiempo real. Su objetivo es proporcionar información precisa y accesible para investigaciones, monitoreo ambiental y aplicaciones en zonas remotas.  
