@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/dvdr/TZIKIN/TZIKINenv
+set -gx VIRTUAL_ENV /home/dvdr/Documentos/TZIKIN/TZIKINenv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
