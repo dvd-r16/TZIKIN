@@ -1,6 +1,7 @@
 import csv
 import os
 import requests
+import time
 from datetime import datetime, timedelta, timezone
 from skyfield.api import load, wgs84
 
@@ -18,21 +19,19 @@ SATELLITES = [
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle"
 
 def get_latest_gps():
-    """Obtiene las coordenadas más recientes del archivo gps_data.csv"""
     try:
         with open(GPS_FILE, newline='') as csvfile:
             reader = list(csv.reader(csvfile))
-            if len(reader) > 1:  # Hay datos disponibles
-                lat, lon, alt = map(float, reader[-1])  # Última fila
+            if len(reader) > 1:
+                lat, lon, alt = map(float, reader[-1])
                 return lat, lon, alt
     except FileNotFoundError:
         print("No se encontró gps_data.csv. Usando coordenadas predeterminadas.")
     except Exception as e:
         print(f"Error al leer el archivo GPS: {e}")
-    return 14.6349, -90.5069, 1500  # Coordenadas predeterminadas
+    return 14.6349, -90.5069, 1500
 
 def download_tle():
-    """Descarga el TLE de los satélites si no existe el archivo."""
     if os.path.exists(TLE_FILE):
         print("TLE.txt ya existe. Usando datos almacenados.")
         return
@@ -46,7 +45,6 @@ def download_tle():
         print(f"Error al descargar TLE: {e}")
 
 def load_tle():
-    """Carga los datos TLE desde el archivo TLE.txt"""
     try:
         satellites = load.tle_file(TLE_FILE)
         return {sat.name: sat for sat in satellites if sat.name in SATELLITES}
@@ -55,11 +53,10 @@ def load_tle():
         return {}
 
 def calculate_passes(tle_data, lat, lon, alt):
-    """Calcula los pases visibles de los satélites para los próximos 3 días y los guarda en PASSES.csv"""
     print("Iniciando cálculo de pases...")
     if not tle_data:
         print("No hay datos TLE disponibles para calcular los pases.")
-        return
+        return []
     
     observer = wgs84.latlon(lat, lon, alt)
     ts = load.timescale()
@@ -73,43 +70,78 @@ def calculate_passes(tle_data, lat, lon, alt):
         
         for i in range(len(times) - 2):
             rise_time, culm_time, set_time = times[i], times[i+1], times[i+2]
-            rise_az, culm_az, set_az = None, None, None
-            max_elevation = 0.0
-            
             difference = sat - observer
-            topocentric_rise = difference.at(rise_time)
-            alt_rise, az_rise, _ = topocentric_rise.altaz()
-            rise_az = az_rise.degrees
-            
             topocentric_culm = difference.at(culm_time)
-            alt_culm, az_culm, _ = topocentric_culm.altaz()
-            culm_az, max_elevation = az_culm.degrees, alt_culm.degrees
-            
-            topocentric_set = difference.at(set_time)
-            alt_set, az_set, _ = topocentric_set.altaz()
-            set_az = az_set.degrees
-            
+            alt_culm, _, _ = topocentric_culm.altaz()
+            max_elevation = alt_culm.degrees
+
             if max_elevation < 10:
-                continue  # Ignorar pases con culminación menor a 10°
-            
-            warning = "WARNING" if 10 <= max_elevation < 20 else ""
-            
-            passes.append([name, rise_time.utc_iso(), f"{rise_az:.2f}", 
-                           culm_time.utc_iso(), f"{culm_az:.2f}", f"{max_elevation:.2f}", 
-                           set_time.utc_iso(), f"{set_az:.2f}", warning])
+                continue
+
+            passes.append([name, rise_time.utc_iso(), set_time.utc_iso(), f"{max_elevation:.2f}"])
     
     passes.sort(key=lambda x: x[1])
-    
-    with open(PASSES_FILE, "w", newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile, delimiter='|')
-        writer.writerow(["Satelite", "Hora de salida (UTC)", "Azimut salida (°)", 
-                         "Hora de culminacion (UTC)", "Azimut culminacion (°)", "Elevacion maxima (°)", 
-                         "Hora de puesta (UTC)", "Azimut puesta (°)", "Advertencia"])
+
+    # Guardar en PASSES.csv
+    with open(PASSES_FILE, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Satélite", "Inicio", "Fin", "AlturaMax"])
         writer.writerows(passes)
-    
-    print(f"Pases calculados y guardados en {PASSES_FILE}.")
+
+    return passes
+
+
+def track_satellites(passes, tle_data, lat, lon, alt):
+    ts = load.timescale()
+    observer = wgs84.latlon(lat, lon, alt)
+
+    while passes:
+        now = datetime.now(timezone.utc)
+        found_active = False
+
+        for i, (name, rise_time, set_time, _) in enumerate(passes):
+            rise_dt = datetime.fromisoformat(rise_time.replace('Z', '')).replace(tzinfo=timezone.utc)
+            set_dt = datetime.fromisoformat(set_time.replace('Z', '')).replace(tzinfo=timezone.utc)
+
+            if now > set_dt:
+                print(f"{name} ya pasó. Eliminando de la lista...")
+                passes.pop(i)
+                break  # Reinicia loop ya que cambió el índice
+            elif rise_dt <= now <= set_dt:
+                sat = tle_data.get(name)
+                if not sat:
+                    print(f"No se encontró TLE para {name}. Omitiendo...")
+                    passes.pop(i)
+                    break
+
+
+                print(f"{name} en seguimiento en tiempo real...")
+                while datetime.now(timezone.utc) < set_dt:
+                    t = ts.now()
+                    difference = sat - observer
+                    topocentric = difference.at(t)
+                    alt, az, _ = topocentric.altaz()
+                    print(f"{datetime.now(timezone.utc).isoformat()} | {name} | Azimut: {az.degrees:.2f}° | Altitud: {alt.degrees:.2f}°")
+                    time.sleep(1)
+
+                print(f"{name} ha pasado. Eliminando de la lista...")
+                passes.pop(i)
+                found_active = True
+                break  # Solo sigue con uno a la vez
+
+        if not found_active:
+            # Si no hay ninguno activo, esperar al siguiente pase futuro más cercano
+            next_rise = datetime.fromisoformat(passes[0][1].replace('Z', '')).replace(tzinfo=timezone.utc)
+            print(f"Esperando la aparición de {passes[0][0]} a las {next_rise.isoformat()} UTC...")
+            while datetime.now(timezone.utc) < next_rise:
+                time.sleep(1)
+
+    print("No hay más satélites por rastrear.")
+
+
 
 lat, lon, alt = get_latest_gps()
 download_tle()
 tle_data = load_tle()
-calculate_passes(tle_data, lat, lon, alt)
+passes = calculate_passes(tle_data, lat, lon, alt)
+track_satellites(passes, tle_data, lat, lon, alt)
