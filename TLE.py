@@ -106,14 +106,36 @@ def track_satellites(passes, tle_data, lat, lon, alt):
             if now > set_dt:
                 print(f"{name} ya pasó. Eliminando de la lista...")
                 passes.pop(i)
-                break  # Reinicia loop ya que cambió el índice
+                break
+
+            # ↓↓↓↓↓ NUEVO: 1 minuto antes del pase
+            elif (rise_dt - now).total_seconds() <= 60 and now < rise_dt:
+                print(f"Generando next_target.flag para {name}...")
+
+                sat = tle_data.get(name)
+                if sat:
+                    t_predicho = ts.from_datetime(rise_dt)
+                    difference = sat - observer
+                    topocentric = difference.at(t_predicho)
+                    alt, az, _ = topocentric.altaz()
+                    elevacion = max(alt.degress, 0.0)
+
+                    with open("next_target.flag", "w") as f:
+                        f.write(f"SAT={name}\n")
+                        f.write(f"ELEV={elevacion:.2f}\n")
+                        f.write(f"AZIM={az.degrees:.2f}\n")
+
+                # Espera a que empiece el pase
+                while datetime.now(timezone.utc) < rise_dt:
+                    time.sleep(1)
+                break
+
             elif rise_dt <= now <= set_dt:
                 sat = tle_data.get(name)
                 if not sat:
                     print(f"No se encontró TLE para {name}. Omitiendo...")
                     passes.pop(i)
                     break
-
 
                 print(f"{name} en seguimiento en tiempo real...")
                 while datetime.now(timezone.utc) < set_dt:
@@ -125,12 +147,15 @@ def track_satellites(passes, tle_data, lat, lon, alt):
                     time.sleep(1)
 
                 print(f"{name} ha pasado. Eliminando de la lista...")
+                # ↓↓↓↓↓ NUEVO: al finalizar el pase, regresar a HOME
+                with open("reset.flag", "w") as f:
+                    f.write("RESET=TRUE\n")
+
                 passes.pop(i)
                 found_active = True
-                break  # Solo sigue con uno a la vez
+                break
 
-        if not found_active:
-            # Si no hay ninguno activo, esperar al siguiente pase futuro más cercano
+        if not found_active and passes:
             next_rise = datetime.fromisoformat(passes[0][1].replace('Z', '')).replace(tzinfo=timezone.utc)
             print(f"Esperando la aparición de {passes[0][0]} a las {next_rise.isoformat()} UTC...")
             while datetime.now(timezone.utc) < next_rise:
