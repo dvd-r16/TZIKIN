@@ -4,7 +4,7 @@ import keyboard
 
 # Pines del motor de elevación
 pul_elev = OutputDevice(17)
-dir_elev = OutputDevice(2wqwqqw47)
+dir_elev = OutputDevice(27)
 
 # Pines del motor de azimuth
 pul_azim = OutputDevice(22)
