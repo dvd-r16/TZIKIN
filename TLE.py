@@ -2,6 +2,8 @@ import csv
 import os
 import requests
 import time
+import json
+import subprocess
 from datetime import datetime, timedelta, timezone
 from skyfield.api import load, wgs84
 
@@ -9,6 +11,7 @@ from skyfield.api import load, wgs84
 GPS_FILE = "gps_data.csv"
 TLE_FILE = "TLE.txt"
 PASSES_FILE = "PASSES.csv"
+TARGET_FILE = "next_target.json"
 
 # Satélites a rastrear
 SATELLITES = [
@@ -17,6 +20,9 @@ SATELLITES = [
 
 # URL para descargar TLE
 TLE_URL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=weather&FORMAT=tle"
+
+# Asegurarse de que la carpeta de logs exista
+os.makedirs("logs", exist_ok=True)
 
 def get_latest_gps():
     try:
@@ -90,6 +96,24 @@ def calculate_passes(tle_data, lat, lon, alt):
 
     return passes
 
+def write_target_json(name, sat, t, observer):
+    difference = sat - observer
+    topocentric = difference.at(t)
+    elev, azim, _ = topocentric.altaz()
+    elevacion = max(elev.degrees, 0.0)
+    azimut = azim.degrees
+
+    data = {
+        "SAT": name,
+        "ELEV": round(elevacion, 2),
+        "AZIM": round(azimut, 2),
+        "STATUS": "ready"
+    }
+
+    with open(TARGET_FILE, "w") as f:
+        json.dump(data, f)
+
+    print(f"[TLE] next_target.json creado: {data}")
 
 def track_satellites(passes, tle_data, lat, lon, alt):
     ts = load.timescale()
@@ -108,24 +132,12 @@ def track_satellites(passes, tle_data, lat, lon, alt):
                 passes.pop(i)
                 break
 
-            # ↓↓↓↓↓ NUEVO: 1 minuto antes del pase
             elif (rise_dt - now).total_seconds() <= 60 and now < rise_dt:
-                print(f"Generando next_target.flag para {name}...")
-
+                print(f"[TLE] Generando JSON para {name} (1 min antes del pase)...")
                 sat = tle_data.get(name)
                 if sat:
                     t_predicho = ts.from_datetime(rise_dt)
-                    difference = sat - observer
-                    topocentric = difference.at(t_predicho)
-                    alt, az, _ = topocentric.altaz()
-                    elevacion = max(alt.degress, 0.0)
-
-                    with open("next_target.flag", "w") as f:
-                        f.write(f"SAT={name}\n")
-                        f.write(f"ELEV={elevacion:.2f}\n")
-                        f.write(f"AZIM={az.degrees:.2f}\n")
-
-                # Espera a que empiece el pase
+                    write_target_json(name, sat, t_predicho, observer)
                 while datetime.now(timezone.utc) < rise_dt:
                     time.sleep(1)
                 break
@@ -138,19 +150,46 @@ def track_satellites(passes, tle_data, lat, lon, alt):
                     break
 
                 print(f"{name} en seguimiento en tiempo real...")
+
+                # Inicializar log del pase
+                log_filename = f"log_{name.replace(' ', '_')}_{rise_dt.strftime('%Y%m%dT%H%M%S')}.csv"
+                log_data = [["UTC", "Azimut", "Altitud"]]
+
                 while datetime.now(timezone.utc) < set_dt:
                     t = ts.now()
                     difference = sat - observer
                     topocentric = difference.at(t)
                     alt, az, _ = topocentric.altaz()
-                    print(f"{datetime.now(timezone.utc).isoformat()} | {name} | Azimut: {az.degrees:.2f}° | Altitud: {alt.degrees:.2f}°")
-                    time.sleep(1)
+                    elev = max(alt.degrees, 0.0)
+                    azim = az.degrees
 
-                print(f"{name} ha pasado. Eliminando de la lista...")
-                # ↓↓↓↓↓ NUEVO: al finalizar el pase, regresar a HOME
+                    print(f"{datetime.now(timezone.utc).isoformat()} | {name} | Azimut: {azim:.2f}° | Altitud: {elev:.2f}°")
+
+                    data = {
+                        "SAT": name,
+                        "ELEV": round(elev, 2),
+                        "AZIM": round(azim, 2),
+                        "STATUS": "ready"
+                    }
+
+                    with open("next_target.json", "w") as f:
+                        json.dump(data, f)
+
+                    log_data.append([datetime.now(timezone.utc).isoformat(), f"{azim:.2f}", f"{elev:.2f}"])
+
+                    time.sleep(2)
+
+                # Guardar log al finalizar el pase
+                with open(os.path.join("logs", log_filename), "w", newline="") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(log_data)
+
+                print(f"[LOG] Pase registrado en logs/{log_filename}")
+
                 with open("reset.flag", "w") as f:
                     f.write("RESET=TRUE\n")
 
+                print(f"{name} ha pasado. Eliminando de la lista...")
                 passes.pop(i)
                 found_active = True
                 break
@@ -163,10 +202,30 @@ def track_satellites(passes, tle_data, lat, lon, alt):
 
     print("No hay más satélites por rastrear.")
 
-
-
+# --- Flujo principal ---
 lat, lon, alt = get_latest_gps()
 download_tle()
 tle_data = load_tle()
 passes = calculate_passes(tle_data, lat, lon, alt)
+
+print("Iniciando MOTOR.py en segundo plano...")
+motor_process = subprocess.Popen(["python3", "MOTOR.py"])
+time.sleep(2)
+
+# Generar primer objetivo desde ahora (sin esperar)
+if passes:
+    name, rise_time, set_time, _ = passes[0]
+    ts = load.timescale()
+    observer = wgs84.latlon(lat, lon, alt)
+    sat = tle_data.get(name)
+
+    if sat:
+        now = datetime.now(timezone.utc)
+        rise_dt = datetime.fromisoformat(rise_time.replace('Z', '')).replace(tzinfo=timezone.utc)
+        if now <= datetime.fromisoformat(set_time.replace('Z', '')).replace(tzinfo=timezone.utc):
+            t_init = ts.from_datetime(rise_dt if now < rise_dt else now)
+            write_target_json(name, sat, t_init, observer)
+else:
+    print("No hay pases disponibles para enviar.")
+
 track_satellites(passes, tle_data, lat, lon, alt)
